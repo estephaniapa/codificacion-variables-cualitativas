@@ -1,0 +1,154 @@
+---
+title: "Tarea: Codificación de variables cualitativas en R"
+author: "Estephania Pivac Alcaraz"
+date: "2022-09-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Categorical variables
+
+Categorical variables are a challenge for Machine Learning algorithms. Since most (if not all) of them accept only numerical values as inputs, we need to transform the categories into numbers to use them in the model. In order to solve this problem, we can use different “encoding” techniques to make our categorical data legible.
+
+```{r}
+#install.packages("vtreat")
+library(vtreat)
+library(kableExtra)
+library(magrittr)
+library(dplyr)
+```
+
+
+## One-hot encoding
+
+### What is one-hot encoding?
+One-hot encoding is the process of converting a categorical variable with multiple categories into multiple variables, each with a value of 1 or 0, known as dummy variable. This encoding creates one dummy variable for each category value that appears in the original categorical variable. 
+
+Disadvantages:
+Tree algorithms cannot be applied to one-hot encoded data since it creates a sparse matrix.
+When the feature contains too many unique values, that many features are created which may result in overfitting.
+
+### Example 1
+Let's see the following example.
+
+We begin by creating a data frame with a categorical variable: "Class.Name" of clothing.
+
+```{r}
+Clothing <- data.frame( 
+  "Class.Name" = sample(c("Dresses", "Tops", "Bottoms", "Intimates", "Blouses", "Chemises", "Jackets", "Jeans", "Outerwear", "Panst", "Skirts", "Swim", "Sweaters", "Knits"), size = 250, replace = TRUE))
+
+Clothing[1:30,]%>%
+  kbl() %>%
+  kable_paper() %>%
+  scroll_box(width = "50%", height = "250px")
+```
+We can use the "vtreat" package to obtain the dummies variables of one hot method.
+
+```{r}
+# using the vtreat package
+tz <- designTreatmentsZ(Clothing, "Class.Name")
+
+
+one_hot_Clothing <- prepare(tz, Clothing)
+
+
+merge(Clothing, one_hot_Clothing)[1:30,]%>%
+  kbl() %>%
+  kable_paper() %>%
+  scroll_box(width = "100%", height = "250px")
+```
+
+
+##  Contrast encoder: Polynomial
+
+Polynomial — orthogonal polynomial contrasts. The coefficients taken on by polynomial coding for k=4 levels are the linear, quadratic, and cubic trends in the categorical variable.
+
+### Example 2
+
+```{r}
+df_movies <- data.frame( 
+  "Genre" = sample(c("Comedy", "History", "Sci-Fi", "Romance", "Thriller", "Mystery", "Drama", "Horror", "War", "Action", "Musical", "Superhero", "Animation", "Fantasy"), size = 250, replace = TRUE))
+
+df_movies[1:30,]%>%
+  kbl() %>%
+  kable_paper() %>%
+  scroll_box(width = "30%", height = "250px")
+```
+
+
+```{r}
+encode_polynomial <- function(df, var) {
+  x <- df[[var]]
+  x <- unique(x)
+  n <- length(x)
+  d <- as.data.frame(contr.poly(n))
+  d[[var]] <- x
+  names(d) <- c(paste0(var, 1:(n-1)), var)
+  d
+}
+
+polynomial_df_movies <- encode_polynomial(df_movies, "Genre")
+polynomial_df_movies %>%
+  kbl() %>%
+  kable_paper() %>%
+  scroll_box(width = "100%", height = "250px")
+
+```
+
+## Bayesian method: Target 
+
+By one-hot encoding, we create a really sparse matrix and inflate the number of dimensions the model needs to work with, and we may fall victim to the dreaded Curse of Dimensionality. This is amplified when the feature has too many categories, most of them being useless for the prediction.
+
+One clever approach to deal with this problem is the Target Encoder.
+
+Target Encoding is defined as the process in which “features are replaced with a blend of posterior probability of the target given particular categorical value and the prior probability of the target over all the training data.”
+
+
+### Example 3
+To better understand what this means, let’s look at an example. In the next table, we have categorical data in the ‘Genre’ column, and we have our binary target in the ‘Target’ column. 
+
+```{r}
+df_music <- data.frame( 
+  "Genre" = sample(c("Classical", "Country", "Electronic", "Indie Pop", "K-Pop", "Jazz", "Pop"), size = 50, replace = TRUE),
+  "Target" = sample(c(0,1), size = 50, replace = TRUE))
+
+df_music%>%
+  kbl() %>%
+  kable_paper() %>%
+  scroll_box(width = "50%", height = "250px")
+```
+
+```{r}
+encode_target <- function(x, y, sigma = NULL) {
+  d <- aggregate(y, list(factor(x, exclude = NULL)), mean, na.rm = TRUE)
+  m <- d[is.na(as.character(d[, 1])), 2]
+  l <- d[, 2]
+  names(l) <- d[, 1]
+  l <- l[x]
+  l[is.na(l)] <- m
+  if (!is.null(sigma)) {
+    l <- l * rnorm(length(l), mean = 1, sd = sigma)
+  }
+  l
+}
+
+table(encode_target(df_music[["Genre"]], df_music[["Target"]]), df_music[["Genre"]], useNA = "ifany")
+
+new_df_music <- df_music
+new_df_music[["Genre_encoded"]] <- encode_target(df_music[["Genre"]], df_music[["Target"]])
+new_df_music%>%
+  kbl() %>%
+  kable_paper() %>%
+  scroll_box(width = "50%", height = "250px")
+```
+In the final column of the above table, we have the encoded genre values. So how did we get there?
+
+1. Group the data by each category and count the number of occurrences of each target.
+
+2. Next, calculate the probability of Target 1 occurring given each specific ‘Genre’.
+
+3. Finally, add back in the new column, which gives the probability value of each music "Genre". This is shown in the next dataframe. Now you have a numerical value that represents the ‘Genre’ feature that can be recognized by machine learning algorithms.
+
